@@ -9,7 +9,6 @@ mod common;
 
 use filmcraft_h264::{Decoder, Picture};
 use std::path::PathBuf;
-use std::process::Command;
 
 struct Case {
     name: &'static str,
@@ -91,51 +90,16 @@ const CASES: &[Case] = &[
     Case { width: 350, height: 286, ..case("hbd_422_8_cropped", "yuv422p", "high422", "keyint=1") },
 ];
 
-fn dir() -> PathBuf {
-    filmcraft_testkit::fixtures_dir("h264")
-}
-
-fn run(cmd: &mut Command) -> bool {
-    match cmd.output() {
-        Ok(o) if o.status.success() => true,
-        Ok(o) => {
-            eprintln!("command failed: {:?}\n{}", cmd, String::from_utf8_lossy(&o.stderr));
-            false
-        }
-        Err(e) => {
-            eprintln!("failed to run {:?}: {e}", cmd);
-            false
-        }
-    }
-}
-
 /// Generate (if needed) the stream and ffmpeg's decode of it; `None` when ffmpeg is unavailable.
 fn ensure(c: &Case) -> Option<(PathBuf, PathBuf)> {
-    let ff = filmcraft_testkit::ffmpeg_or_skip(c.name)?;
-    let (h264, yuv) = (dir().join(format!("{}.h264", c.name)), dir().join(format!("{}.yuv", c.name)));
-    if !h264.exists() {
-        let tmp = filmcraft_testkit::temp_path(&h264);
-        let mut vf = format!("{}=size={}x{}:rate=25", c.source, c.width, c.height);
-        if !c.filter.is_empty() {
-            vf.push(',');
-            vf.push_str(c.filter);
-        }
-        vf.push_str(&format!(",format={}", c.pix_fmt));
-        let mut cmd = Command::new(&ff);
-        cmd.args(["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", &vf, "-frames:v", &c.frames.to_string()]);
-        cmd.args(["-c:v", "libx264", "-profile:v", c.profile, "-x264-params", c.x264, "-f", "h264"]).arg(&tmp);
-        assert!(run(&mut cmd), "fixture generation failed for {}", c.name);
-        std::fs::rename(&tmp, &h264).unwrap();
+    let mut vf = format!("{}=size={}x{}:rate=25", c.source, c.width, c.height);
+    if !c.filter.is_empty() {
+        vf.push(',');
+        vf.push_str(c.filter);
     }
-    if !yuv.exists() {
-        let tmp = filmcraft_testkit::temp_path(&yuv);
-        let mut cmd = Command::new(&ff);
-        cmd.args(["-hide_banner", "-loglevel", "error", "-y", "-i"]).arg(&h264);
-        cmd.args(["-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", c.pix_fmt]).arg(&tmp);
-        assert!(run(&mut cmd), "reference decode failed for {}", c.name);
-        std::fs::rename(&tmp, &yuv).unwrap();
-    }
-    Some((h264, yuv))
+    vf.push_str(&format!(",format={}", c.pix_fmt));
+    let (h264, yuv) = common::ensure_stream(c.name, &vf, c.frames, &["-profile:v", c.profile, "-x264-params", c.x264], Some(c.pix_fmt))?;
+    Some((h264, yuv?))
 }
 
 /// The samples of `p` as ffmpeg's rawvideo layout (little-endian 16-bit above 8 bits).
@@ -229,16 +193,11 @@ cases!(
 /// 4:4:4 (High 4:4:4 Predictive) is an `Unsupported` error, not wrong samples.
 #[test]
 fn high_444_is_unsupported() {
-    let Some(ff) = filmcraft_testkit::ffmpeg_or_skip("hbd_444_unsupported") else { return };
-    let h264 = dir().join("hbd_444.h264");
-    if !h264.exists() {
-        let tmp = filmcraft_testkit::temp_path(&h264);
-        let mut cmd = Command::new(&ff);
-        cmd.args(["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=64x64:rate=25", "-frames:v", "2", "-pix_fmt", "yuv444p10le"]);
-        cmd.args(["-c:v", "libx264", "-profile:v", "high444", "-x264-params", "keyint=1", "-f", "h264"]).arg(&tmp);
-        assert!(run(&mut cmd), "fixture generation failed for hbd_444");
-        std::fs::rename(&tmp, &h264).unwrap();
-    }
+    let Some((h264, _)) =
+        common::ensure_stream("hbd_444", "testsrc2=size=64x64:rate=25,format=yuv444p10le", 2, &["-profile:v", "high444", "-x264-params", "keyint=1"], None)
+    else {
+        return;
+    };
     let data = std::fs::read(&h264).unwrap();
     let mut dec = Decoder::with_threads(1);
     let err = dec.decode(&data, 0).err().or_else(|| dec.take_error());

@@ -73,10 +73,13 @@ platforms** G4, G9, G17; **performance** G16; **ecosystem** G11; **measurement**
 - **Missing:** H.264 4:4:4 and lossless; HEVC has no 4:2:2 / RExt (Sony XAVC HS 4:2:2 10-bit, Canon,
   Fujifilm and Panasonic HEVC 4:2:2 recordings).
 - **Evidence:** #626 (Panasonic Lumix 4K 10-bit 4:2:2 MOV). On macOS VideoToolbox decodes 10-bit
-  4:2:2 H.264 / HEVC on chips that support it; Windows Media Foundation and Linux decline them, and
-  there is no software fallback, so the clip fails. Premiere decodes them everywhere (and in
-  hardware on Apple silicon, Intel and NVIDIA Blackwell).
-- **Impact:** camera originals from most current cameras do not open on Windows or Linux.
+  4:2:2 H.264 / HEVC on chips that support it; Windows Media Foundation and Linux decline them.
+  H.264 now has the software fallback described above; HEVC 4:2:2 has none, so such a clip still
+  fails. Premiere decodes them everywhere (and in hardware on Apple silicon, Intel and NVIDIA
+  Blackwell).
+- **Impact:** camera originals recorded as HEVC 4:2:2 (Sony XAVC HS and similar) do not open on
+  Windows or Linux; H.264 camera originals open, decoded in software (4K 4:2:2 10-bit is well
+  below real time on a CPU without a hardware decoder).
 - **Estimate:** HEVC Main 4:2:2 10 (RExt subset) 15–25 h. Doc: [codec-parity.md](codec-parity.md).
 
 ## G4. Crashes at start-up, and no test CI on pull requests
